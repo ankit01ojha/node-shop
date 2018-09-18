@@ -3,10 +3,12 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const Order = require('../models/order');
 const Product = require('../models/product');
+const checkAuth = require('../middlewares/checkAuth');
 
-router.get('/', (req, res, next) => {
+router.get('/', checkAuth, (req, res, next) => {
 	Order.find()
         .select('id product quantity')
+        .populate('product', 'name')
         .exec()
         .then(data => {
             console.log(data);
@@ -32,42 +34,67 @@ router.get('/', (req, res, next) => {
         })
 });
 
-router.post('/', (req, res, next) => {
+router.post('/', checkAuth, (req, res, next) => {
             Product.findById(req.body.productId)
                 .then(product => {
+                    if(!product){
+                        return res.status(404).json({
+                            message: 'Incorrect productId, please check the productId'
+                        });
+                    }
                     const order = new Order({
                         _id: mongoose.Types.ObjectId(),
                         quantity: req.body.quantity,
                         product: req.body.productId
                     });
-                    return order.save().then(result => {
-                        console.log(result);
-                        res.status(201).json({result});
-                    })
-                        .catch(err => {
-                            res.status(500).json({
-                                error: err
-                            })
-                        })
-
+                    return order.save();
+                })
+                    .then(result => {
+                    console.log(result);
+                    res.status(201).json({
+                        message: 'Order stored',
+                        createdOrder: {
+                            _id: result._id,
+                            quanity: req.body.quantity,
+                            product: req.body.productId
+                        },
+                        request : {
+                            type: 'GET',
+                            url: 'http://localhost:3001/orders' + result._id
+                        }
                     });
                 })
-                .catch( error => {
-                    res.status(500).json({
-                        message: "Product Not Found",
-                        error: err
-                    })
-                });
+                    .catch(err => {
+                        res.status(500).json({
+                            error: err
+                        });
+                    });
 
+            });
 
-router.get('/:orderId', (req, res, next) => {
+router.get('/:orderId', checkAuth, (req, res, next) => {
 	const id = req.params.orderId;
-	Order.find(id)
+	Order.findById(id)
         .select('id product quantity')
+        .populate('product')
         .exec()
         .then(data => {
             console.log(data);
-            res.status(200).json(data);
+                if(!data){
+                    return res.status(404).json({
+                        message: "Order not found"
+                    })
+                }
+                res.status(200).json({
+                    order: data,
+                    request: {
+                        description : 'To check all the products',
+                        type : 'GET',
+                        url: 'http://localhost:3001/orders'
+                    }
+                });
+
+
         })
         .catch(error => {
             res.status(500).json({
@@ -76,11 +103,25 @@ router.get('/:orderId', (req, res, next) => {
         })
 });
 
-router.delete('/:orderId', (req, res, next) => {
-	res.status(200).json({
-		message: "This order is being deleted",
-		orderId: req.params.orderId
-	});	
+router.delete('/:orderId', checkAuth, (req, res, next) => {
+	Order.remove({_id: req.params.orderId})
+        .exec()
+        .then(data => {
+            res.status(200).json({
+                message: "This order has been deleted",
+                request: {
+                    description : 'To create a new order',
+                    type: 'POST',
+                    url: 'http://locahost:3001/order',
+                    body : { productId: 'ID', quantity: 'Number'}
+                }
+            });
+        })
+        .catch(error => {
+            res.status(500).json({
+                error: err
+            });
+        });
 });
 
 
